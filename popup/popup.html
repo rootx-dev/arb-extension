@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Arb アシスタント</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      width: 340px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Sans', sans-serif;
+      font-size: 13px;
+      background: #1a1a2e;
+      color: #e0e0e0;
+    }
+
+    .header {
+      background: #16213e;
+      padding: 10px 14px;
+      border-bottom: 1px solid #0f3460;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .header h1 {
+      font-size: 14px;
+      font-weight: 600;
+      color: #a78bfa;
+      flex: 1;
+    }
+
+    .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #6b7280;
+      flex-shrink: 0;
+    }
+
+    .backend-status {
+      font-size: 10px;
+      color: #f87171;
+    }
+
+    /* --- Input section --- */
+    .input-section {
+      padding: 10px 10px 0;
+    }
+
+    .input-section textarea {
+      width: 100%;
+      height: 72px;
+      background: #0f172a;
+      border: 1px solid #0f3460;
+      border-radius: 6px;
+      color: #e0e0e0;
+      font-size: 11px;
+      font-family: inherit;
+      padding: 6px 8px;
+      resize: none;
+      outline: none;
+      line-height: 1.4;
+    }
+
+    .input-section textarea:focus {
+      border-color: #7c3aed;
+    }
+
+    .input-section textarea::placeholder {
+      color: #4b5563;
+    }
+
+    .input-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    .parse-btn {
+      background: #7c3aed;
+      color: #fff;
+      border: none;
+      padding: 5px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+      flex-shrink: 0;
+    }
+
+    .parse-btn:hover:not(:disabled) { background: #6d28d9; }
+    .parse-btn:disabled { background: #374151; color: #6b7280; cursor: not-allowed; }
+
+    .parse-hint {
+      font-size: 10px;
+      color: #4b5563;
+    }
+
+    .parse-error {
+      margin-top: 6px;
+      font-size: 11px;
+      color: #f87171;
+      min-height: 0;
+    }
+
+    /* --- Bet blocks --- */
+    #bets-container {
+      padding-bottom: 10px;
+    }
+
+    .bet-block {
+      margin-top: 10px;
+    }
+
+    /* divider between multiple bets */
+    .bet-block + .bet-block {
+      border-top: 1px solid #0f3460;
+      padding-top: 2px;
+    }
+
+    .bet-index {
+      font-size: 10px;
+      font-weight: 700;
+      color: #7c3aed;
+      padding: 6px 10px 2px;
+      letter-spacing: 0.06em;
+    }
+
+    /* --- Event card --- */
+    .event-card {
+      background: #16213e;
+      margin: 0 10px;
+      border-radius: 8px;
+      padding: 10px 12px;
+      border: 1px solid #0f3460;
+    }
+
+    .event-teams {
+      font-size: 13px;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 3px;
+    }
+
+    .event-meta {
+      font-size: 11px;
+      color: #94a3b8;
+      margin-bottom: 4px;
+    }
+
+    .event-profit {
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .profit-ok { color: #22c55e; }
+    .profit-no { color: #f87171; }
+
+    /* --- Raw message collapsible --- */
+    .raw-msg {
+      margin: 6px 10px 0;
+      font-size: 10px;
+    }
+
+    .raw-msg summary {
+      color: #4b5563;
+      cursor: pointer;
+      user-select: none;
+      padding: 2px 0;
+    }
+
+    .raw-msg summary:hover { color: #94a3b8; }
+
+    .raw-msg pre {
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 4px;
+      padding: 6px 8px;
+      margin-top: 4px;
+      color: #64748b;
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.4;
+      max-height: 100px;
+      overflow-y: auto;
+    }
+
+    /* --- Leg cards --- */
+    .legs { padding: 8px 10px 0; }
+
+    .leg-card {
+      background: #16213e;
+      margin-bottom: 6px;
+      border-radius: 8px;
+      padding: 10px 12px;
+      border: 1px solid #0f3460;
+    }
+
+    .leg-book {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: #a78bfa;
+      margin-bottom: 4px;
+    }
+
+    .leg-selection {
+      font-size: 12px;
+      color: #e0e0e0;
+      margin-bottom: 6px;
+    }
+
+    .leg-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .odds {
+      background: #0f3460;
+      color: #fbbf24;
+      padding: 3px 8px;
+      border-radius: 5px;
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .stake {
+      color: #94a3b8;
+      font-size: 12px;
+      flex: 1;
+    }
+
+    .stake-sub {
+      color: #64748b;
+      font-size: 10px;
+    }
+
+    .rate-warning {
+      color: #fbbf24;
+      font-size: 10px;
+      padding: 4px 12px 0;
+    }
+
+    .leg-status {
+      margin-top: 6px;
+      font-size: 11px;
+      min-height: 15px;
+      color: #94a3b8;
+      line-height: 1.4;
+    }
+
+    .leg-status.running { color: #60a5fa; }
+    .leg-status.done    { color: #22c55e; }
+    .leg-status.error   { color: #f87171; }
+
+    .execute-btn {
+      background: #7c3aed;
+      color: #fff;
+      border: none;
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .execute-btn:hover:not(:disabled) { background: #6d28d9; }
+    .execute-btn:disabled { background: #374151; color: #6b7280; cursor: not-allowed; }
+
+    .run-all-row {
+      padding: 2px 10px 0;
+    }
+
+    .run-all-btn {
+      width: 100%;
+      background: #0f3460;
+      color: #fbbf24;
+      border: 1px solid #a78bfa;
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s;
+      letter-spacing: 0.04em;
+    }
+
+    .run-all-btn:hover:not(:disabled) { background: #1e3a6f; }
+    .run-all-btn:disabled { background: #374151; color: #6b7280; border-color: #374151; cursor: not-allowed; }
+
+    /* --- Settings panel --- */
+    .settings {
+      margin: 0;
+      padding: 6px 14px 8px;
+      background: #16213e;
+      border-bottom: 1px solid #0f3460;
+      font-size: 11px;
+    }
+    .settings summary {
+      color: #94a3b8;
+      cursor: pointer;
+      user-select: none;
+      padding: 2px 0;
+      font-size: 11px;
+    }
+    .settings summary:hover { color: #e0e0e0; }
+    .settings label {
+      display: block;
+      color: #94a3b8;
+      margin: 6px 0 2px;
+      font-size: 10px;
+      letter-spacing: 0.04em;
+    }
+    .settings input {
+      width: 100%;
+      background: #0f172a;
+      border: 1px solid #0f3460;
+      border-radius: 4px;
+      color: #e0e0e0;
+      font-size: 11px;
+      font-family: inherit;
+      padding: 4px 6px;
+      outline: none;
+    }
+    .settings input:focus { border-color: #7c3aed; }
+    .settings select {
+      background: #0f172a;
+      border: 1px solid #0f3460;
+      border-radius: 4px;
+      color: #e0e0e0;
+      font-size: 11px;
+      font-family: inherit;
+      padding: 3px 4px;
+      outline: none;
+    }
+    .settings select:focus { border-color: #7c3aed; }
+    .cfg-currencies {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr auto;
+      gap: 4px 8px;
+      align-items: center;
+      margin-top: 4px;
+    }
+    .cfg-cur-book {
+      color: #94a3b8;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .settings-save {
+      margin-top: 6px;
+      background: #7c3aed;
+      color: #fff;
+      border: none;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .settings-save:hover { background: #6d28d9; }
+    .settings-saved {
+      color: #22c55e;
+      font-size: 10px;
+      margin-left: 6px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="dot" id="status-dot"></div>
+    <h1>Arb アシスタント</h1>
+    <span class="backend-status" id="backend-status"></span>
+  </div>
+
+  <details class="settings" id="settings">
+    <summary>サーバー設定</summary>
+    <label for="cfg-server">サーバー URL</label>
+    <input type="text" id="cfg-server" placeholder="https://arb-backend.onrender.com">
+    <label for="cfg-token">Bearer トークン</label>
+    <input type="password" id="cfg-token" placeholder="(空欄ならローカル開発モード)">
+    <label for="cfg-total">合計ステーク (円)</label>
+    <input type="number" id="cfg-total" min="0" step="1000" placeholder="10000">
+    <label>ブックごとの通貨 (実際に入力される金額の単位)</label>
+    <div class="cfg-currencies" id="cfg-currencies"></div>
+    <div>
+      <button class="settings-save" id="cfg-save">保存</button>
+      <span class="settings-saved" id="cfg-saved"></span>
+    </div>
+  </details>
+
+  <div class="input-section">
+    <textarea id="msg-input" placeholder="Discordのアービトラージメッセージをここに貼り付け..."></textarea>
+    <div class="input-row">
+      <button class="parse-btn" id="parse-btn">解析</button>
+      <span class="parse-hint">Ctrl+Enter でも解析できます</span>
+    </div>
+    <div class="parse-error" id="parse-error"></div>
+  </div>
+
+  <div id="bets-container"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

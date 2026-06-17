@@ -1,0 +1,111 @@
+{
+  "manifest_version": 3,
+  "name": "Arb Betting Assistant",
+  "version": "0.1.0",
+  "description": "Semi-automated arbitrage betting assistant",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoAJulSzkjPF6sA5d4kwLoPD4Mcps3FSvv85gVyYKGCy6Y3Gf61PeGBYVhqs73LHUc565X5UFcFYK8f1ZS3+0TTyPr2NYsg29mv4fKjlOB0Dg9j0ORxMrvH7vJbfnedHswWky+1rSoq6mLF/Y1UMV8yK77Y/Spi7FJBQPX9OJ9yn+ThgT17xj6thFW4tOshPtOrMbHLYBq/laSYjuLdJYk1RyHYJifuCQ39jPgJdOBUc2JKYkhKv7qwOH+b1IA7vLcoVEPN0j0fep2ko7ypxRmjunR+2/3gfVWcmzf7eLmydoR3VnC8SQ1h4XIs3wV6OItZRoJGEfd1PwJe7463bhzQIDAQAB",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": ["storage", "tabs", "scripting", "alarms"],
+  "host_permissions": [
+    "https://www.cloudbet.com/*",
+    "https://roobet.com/*",
+    "https://stake.com/*",
+    "https://shuffle.com/*",
+    "https://www.betsio.com/*",
+    "https://betfury.io/*",
+    "https://gg.bet/*",
+    "https://*.1xbet.com/*",
+    "https://1xbet.com/*",
+    "https://*.1xbetjap.com/*",
+    "https://1xbetjap.com/*",
+    "https://*.22bet.com/*",
+    "https://22bet.com/*",
+    "https://22bet.com/line*",
+    "http://localhost:8888/*",
+    "ws://localhost:8888/*",
+    "https://*.onrender.com/*",
+    "wss://*.onrender.com/*"
+  ],
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Arb Betting Assistant",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.cloudbet.com/en/sports*", "https://roobet.com/sports*", "https://stake.com/ja/sports*", "https://stake.com/sports*", "https://shuffle.com/sports*", "https://www.betsio.com/sports*", "https://betfury.io/sports*", "https://gg.bet/sports*", "https://*.1xbet.com/en/line*", "https://1xbet.com/en/line*", "https://*.1xbetjap.com/en/line*", "https://1xbetjap.com/en/line*", "https://*.22bet.com/en/line*", "https://22bet.com/en/line*", "https://*.22bet.com/ja/line*", "https://22bet.com/ja/line*", "https://22bet.com/line*"],
+      "js": ["content-scripts/visibility-spoof.js"],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://www.cloudbet.com/en/sports*"],
+      "js": ["lib/runner.js", "content-scripts/cloudbet.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://roobet.com/sports*"],
+      "js": ["lib/runner.js", "content-scripts/roobet.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://stake.com/ja/sports*", "https://stake.com/sports*"],
+      "js": ["lib/runner.js", "content-scripts/stake.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://shuffle.com/sports*"],
+      "js": ["lib/runner.js", "content-scripts/shuffle.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.betsio.com/sports*"],
+      "js": ["content-scripts/betsio-main.js"],
+      "world": "MAIN",
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.betsio.com/sports*"],
+      "js": ["lib/runner.js", "content-scripts/betsio.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://betfury.io/sports*"],
+      "js": ["lib/runner.js", "content-scripts/betfury.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://gg.bet/sports*"],
+      "js": ["lib/runner.js", "content-scripts/ggbet.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://*.1xbet.com/en/line*", "https://1xbet.com/en/line*", "https://*.1xbetjap.com/en/line*", "https://1xbetjap.com/en/line*", "https://*.22bet.com/en/line*", "https://22bet.com/en/line*", "https://*.22bet.com/ja/line*", "https://22bet.com/ja/line*", "https://22bet.com/line*"],
+      "js": ["content-scripts/1xbet-bridge.js"],
+      "world": "MAIN",
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://*.1xbet.com/en/line*", "https://1xbet.com/en/line*", "https://*.1xbetjap.com/en/line*", "https://1xbetjap.com/en/line*"],
+      "js": ["lib/runner.js", "content-scripts/1xbet.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://*.22bet.com/en/line*", "https://22bet.com/en/line*", "https://*.22bet.com/ja/line*", "https://22bet.com/ja/line*", "https://22bet.com/line*"],
+      "js": ["lib/runner.js", "content-scripts/22bet.js"],
+      "run_at": "document_idle"
+    }
+
+  ]
+}
