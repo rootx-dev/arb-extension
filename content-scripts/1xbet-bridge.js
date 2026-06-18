@@ -18,10 +18,11 @@
 
 (() => {
   const book    = location.hostname.includes('22bet') ? '22bet' : '1xbet';
-  const GRP_ATTR  = `data-arb-${book}-groups`;
-  const BET_ATTR  = `data-arb-${book}-bet`;
-  const DONE_ATTR = `data-arb-${book}-done`;
-  const LOG       = `[ARB-${book}-bridge]`;
+  const GRP_ATTR    = `data-arb-${book}-groups`;
+  const BET_ATTR    = `data-arb-${book}-bet`;
+  const DONE_ATTR   = `data-arb-${book}-done`;
+  const PERIOD_ATTR = `data-arb-${book}-periods`;
+  const LOG         = `[ARB-${book}-bridge]`;
 
   if (book === '22bet') {
     init22bet();
@@ -83,6 +84,20 @@
 
       document.documentElement.setAttribute(GRP_ATTR, JSON.stringify({ events, game }));
       console.log(LOG, 'game data ready, event groups:', events.length);
+
+      // Period (half) sub-games: gameData.SubGames[] each has CI (constId) + PN
+      // ("1st half"/"2nd half"). Expose a period→constId map so the adapter can
+      // navigate to the half's own URL (same model as 1xbet sub-events).
+      try {
+        const subgames = {};
+        for (const s of (gameData.SubGames || [])) {
+          if (s && s.PN && s.CI) subgames[String(s.PN).trim().toLowerCase()] = s.CI;
+        }
+        const pn = String(gameData.PeriodName || '').trim().toLowerCase();
+        const active = (pn === '1st half' || pn === '2nd half') ? pn : '';
+        document.documentElement.setAttribute(PERIOD_ATTR, JSON.stringify({ active, subgames }));
+        console.log(LOG, 'periods:', JSON.stringify({ active, subgames }));
+      } catch (e) { /* non-fatal */ }
 
       new MutationObserver(() => {
         const val = document.documentElement.getAttribute(BET_ATTR);
@@ -228,6 +243,41 @@
       }
     }).observe(document.documentElement, { attributes: true, attributeFilter: [SEARCH_TRIGGER] });
 
+    // Watch for stake-fill trigger. The STAKE (JPY) input (.sum-st input)
+    // is Vue 2 reactive — a native-setter write from the isolated world doesn't
+    // update the model (same issue as the search input), so the bet uses the
+    // default stake. Set the Vue 2 reactive data here in MAIN world + dispatch
+    // events. Value format: the stake number as a string.
+    const STAKE_TRIGGER = 'data-arb-22bet-stake';
+    new MutationObserver((muts) => {
+      for (const m of muts) {
+        if (m.attributeName !== STAKE_TRIGGER) continue;
+        const amount = document.documentElement.getAttribute(STAKE_TRIGGER);
+        if (!amount) continue;
+        document.documentElement.removeAttribute(STAKE_TRIGGER);
+
+        // The real STAKE (JPY) field is in the `.sum-st` container — NOT
+        // `js_one_summa` (that's the one-click quick-bet amount at the top).
+        const input = [...document.querySelectorAll('.sum-st input')].find(i => i.offsetParent !== null)
+          || document.querySelector('.sum-st input');
+        if (!input) { console.warn(LOG, 'stake input (.sum-st input) not found'); continue; }
+
+        const vm = input.__vue__;
+        if (vm) {
+          const numKeys = Object.keys(vm.$data).filter(k => typeof vm.$data[k] === 'string' || typeof vm.$data[k] === 'number');
+          const stakeKey = numKeys.find(k =>
+            ['summa', 'amount', 'stake', 'sum', 'value', 'bet'].some(kw => k.toLowerCase().includes(kw))
+          );
+          if (stakeKey) { console.log(LOG, `vm.${stakeKey} = "${amount}"`); vm[stakeKey] = amount; }
+        }
+        const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+        nativeSetter.call(input, amount);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        console.log(LOG, `stake filled: ${amount}`);
+      }
+    }).observe(document.documentElement, { attributes: true, attributeFilter: [STAKE_TRIGGER] });
+
     pollStore();
   }
 
@@ -248,16 +298,41 @@
       return getVueApp()?.config?.globalProperties?.$pinia;
     }
 
+    // Period (half) markets are SEPARATE sub-games on 1xbet, reached by navigating
+    // to the sub-game's own permanentId URL (the "Regular time" dropdown does a
+    // route change). Expose the active period + the period→permanentId map so the
+    // adapter can navigate to e.g. the 1st-half sub-event. gamePeriodName is "" for
+    // the main game, "1st half" / "2nd half" for the sub-games.
+    function writePeriods(state) {
+      try {
+        const byId = state.gamesById || {};
+        const cur = byId[state.currentGameId] || {};
+        const subgames = {};
+        for (const id of Object.keys(byId)) {
+          const gm = byId[id];
+          const pn = (gm.gamePeriodName || '').trim().toLowerCase();
+          if (pn && gm.permanentId) subgames[pn] = gm.permanentId;
+        }
+        const periods = { active: (cur.gamePeriodName || '').trim().toLowerCase(), subgames };
+        document.documentElement.setAttribute(PERIOD_ATTR, JSON.stringify(periods));
+        console.log(LOG, 'periods:', JSON.stringify(periods));
+      } catch (e) { /* non-fatal */ }
+    }
+
     function pollGroups() {
-      const groups = getPinia()?._s?.get('game')?.$state?.marketGroups;
+      const state = getPinia()?._s?.get('game')?.$state;
+      const groups = state?.marketGroups;
       if (groups?.length) {
         const serialized = groups.map(g => ({
           name: g.name,
+          gameName: g.gameName || '',
+          gameId: g.gameId,
           marketColumns: g.marketColumns.map(col =>
             col.map(o => ({ id: o.id, name: o.name, param: o.param, typeId: o.typeId, coef: o.coef }))
           ),
         }));
         document.documentElement.setAttribute(GRP_ATTR, JSON.stringify(serialized));
+        writePeriods(state);
         console.log(LOG, 'groups ready:', groups.length, 'at', location.pathname, serialized.map(g => g.name));
         const arbGroup = serialized.find(g => g.name === '1X2') || serialized.find(g => g.name === 'Total') || serialized[0];
         if (arbGroup) console.log(LOG, 'sample group', arbGroup.name, '→', arbGroup.marketColumns.flat().slice(0, 4).map(o => ({name:o.name, typeId:o.typeId, param:o.param})));

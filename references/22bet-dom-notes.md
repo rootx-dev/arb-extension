@@ -158,10 +158,41 @@ for URL change and force `window.location.href` reload, same as 1xbet.
 
 ## Stake input
 
-Selector: **unverified** (user must be logged in to test). Candidates:
-- `input.js_one_summa`
-- `input.coupon__input`
-- `input[class*="coupon-summa"]`
+Selector: **`.sum-st input`** — the "STAKE (JPY)" field (container class
+`sum-st withInput …`, input parent `.rc`, input itself only has the generic
+`keyboardInput` class so it must be scoped by `.sum-st`). Verified live
+2026-06-18. Prefer the visible one (`offsetParent !== null`).
+
+**Do NOT use `input.js_one_summa`** — that is the separate **ONE-CLICK** quick-bet
+amount at the top of the slip (next to the one-click toggle), not the stake for
+the selected bet. Filling it was the original "wrong input" bug. Other coupon
+fields to avoid: `searchInput`, `cc-controls__input_text` ("Bet slip code"),
+`promo_coupon`.
+
+**It is Vue 2 reactive** — a native-setter write from the isolated world sets the
+DOM `.value` but does NOT update the Vuex/Vue model, so the bet keeps its default
+stake. Route the fill through the MAIN-world bridge, exactly like the search
+input: the adapter's `fillStakeInput` sets `data-arb-22bet-stake`; the bridge
+finds `input.js_one_summa`, assigns the Vue 2 reactive data key + dispatches
+input/change. (This was the "bet amount typed into the wrong input" bug — really
+the value never registering on the reactive field.)
+
+## Period (half) markets — separate sub-games
+
+Like 1xbet, halves are separate sub-games, NOT GS-scoped groups in the main
+event (an earlier `isFirstHalfTotalGroup` GS-label matcher was wrong twice over:
+`GS` is a numeric group id, not a text label, and the markets aren't there). The
+main event's `gameData.SubGames[]` lists them (confirmed 2026-06-18, Balcatta):
+```
+{ I: 729859664, CI: 343010472, P: 1, PN: "1st half", MG: 729859663 }
+{ I: 729859665, CI: 343010494, P: 2, PN: "2nd half", MG: 729859663 }
+```
+`CI` = constId (the URL id — same values as 1xbet's permanentIds; shared
+platform), `PN` = period name. The bridge maps `PN→CI` into
+`data-arb-22bet-periods`; the adapter's `beforeFindMarket` navigates to the
+half's URL (swap the leading `{constId}-` in the last path segment). On the
+sub-game page `Events` already hold only that half's markets, so `findOutcome`
+needs no period scoping there.
 
 ## Place Bet button
 

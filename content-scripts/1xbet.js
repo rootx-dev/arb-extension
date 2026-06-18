@@ -38,6 +38,12 @@
 
   const GRP_ATTR = 'data-arb-1xbet-groups';
   const BET_ATTR = 'data-arb-1xbet-bet';
+  const PERIOD_ATTR = 'data-arb-1xbet-periods';
+
+  // Period (half/quarter) markets live on a separate sub-game with its own
+  // permanentId URL. Map our period enum → the sub-game's 1xbet gamePeriodName
+  // (as written to PERIOD_ATTR by the bridge).
+  const PERIOD_GAMENAME = { '1st_half': '1st half', '2nd_half': '2nd half' };
 
   // ── Market group name from betData ─────────────────────────────────────────
 
@@ -50,9 +56,18 @@
     if (type === '1x2') return '1X2';
     if (type === 'over_under') {
       // Tennis set-level totals use "Total 1" (1st set) / "Total 2" (2nd set).
-      // Full-match total (period null) uses the shared "Total" group.
-      if (sport === 'tennis' && period === '1st_set') return 'Total 1';
-      return 'Total';
+      if (sport === 'tennis' && period === '1st_set') return ['Total 1'];
+      if (sport === 'tennis') return ['Total'];
+      // Soccer totals split across TWO groups by line granularity:
+      //   "Total"       — typeId 9/10 — half-point (1.5) and integer (1, 2) lines
+      //   "Asian Total" — typeId 3827/3828 — quarter lines (0.75, 1.25, 1.75…)
+      // A given line lives in exactly one group, so we hand both to
+      // findMarketSection and search across them by param (findOutcome). Halves
+      // are a separate sub-game page (beforeFindMarket navigates there); the
+      // gameName requirement in findMarketSection keeps period markets distinct.
+      if (sport === 'soccer') return ['Total', 'Asian Total'];
+      // Hockey / basketball full-match total.
+      return ['Total'];
     }
     if (type === 'handicap_2way') {
       // Draw-less match-winner (tennis, MMA, 1v1 esports) arrives as
@@ -224,30 +239,72 @@
 
     marketLabel: (market) => market.type,
 
+    // Period (half) markets are on a separate sub-game page. If the leg needs a
+    // period (e.g. soccer 1st_half) and we're not already on that sub-game, look
+    // up the sub-game's permanentId (exposed by the bridge in PERIOD_ATTR) and
+    // navigate to its URL — a full reload, after which doFill re-enters on the
+    // sub-game page where the bridge serializes the period's markets.
+    beforeFindMarket: async (root, { sleep, waitFor, logger, betData }) => {
+      const wantedGameName = PERIOD_GAMENAME[betData.market.period];
+      if (!wantedGameName) return; // full match — nothing to do
+      let periods;
+      try {
+        const raw = await waitFor(() => document.documentElement.getAttribute(PERIOD_ATTR), { timeout: 8000 });
+        periods = JSON.parse(raw);
+      } catch (e) { console.log('[ARB-1xbet] no period info (PERIOD_ATTR) — cannot switch period'); return; }
+      if (periods.active === wantedGameName) {
+        console.log(`[ARB-1xbet] already on "${wantedGameName}" sub-game`);
+        return;
+      }
+      const pid = periods.subgames && periods.subgames[wantedGameName];
+      if (!pid) {
+        console.log(`[ARB-1xbet] no "${wantedGameName}" sub-game for this match; available:`, JSON.stringify(periods.subgames));
+        return; // market not offered → findMarketSection will time out safely
+      }
+      // Swap the leading "{permanentId}-" in the last path segment for the sub-game's.
+      const parts = location.pathname.split('/');
+      parts[parts.length - 1] = parts[parts.length - 1].replace(/^\d+-/, `${pid}-`);
+      const url = location.origin + parts.join('/');
+      console.log(`[ARB-1xbet] switching to "${wantedGameName}" sub-game: ${url}`);
+      window.location.href = url;
+      await sleep(100000); // block; the reload restarts doFill on the sub-game page
+    },
+
     findMarketSection: (root, _label, market, betData) => {
       const raw = document.documentElement.getAttribute(GRP_ATTR);
       if (!raw) return null;
       const name = groupName(betData);
-      console.log(`[ARB-1xbet] findMarketSection: looking for group="${name}"`);
+      if (name == null) return null;
+      // name may be a single group name or a candidate list — match exactly
+      // against each (no substring/fuzzy, so we never grab an unrelated group).
+      const candidates = Array.isArray(name) ? name : [name];
+      // For period markets (e.g. 1st_half) require the group's gameName too, so
+      // we never match the full-match "Total" if the sub-game switch didn't land.
+      const reqGameName = PERIOD_GAMENAME[market.period] || null;
+      console.log(`[ARB-1xbet] findMarketSection: group in ${JSON.stringify(candidates)}${reqGameName ? ` gameName="${reqGameName}"` : ''}`);
       const groups = JSON.parse(raw);
-      const group = groups.find(g => g.name === name);
-      if (!group) {
-        console.log('[ARB-1xbet] groups available:', groups.map(g => g.name));
+      // Keep ALL matching groups (e.g. both "Total" and "Asian Total") — a given
+      // line lives in exactly one of them, so findOddsButton searches across.
+      const matching = groups.filter(g =>
+        candidates.includes(g.name) && (reqGameName == null || (g.gameName || '') === reqGameName));
+      if (!matching.length) {
+        console.log('[ARB-1xbet] groups available:', groups.map(g => `${g.name}${g.gameName ? '('+g.gameName+')' : ''}`));
         return null;
       }
       const el = document.createElement('div');
-      el._arb1xbetGroup = group;
+      el._arb1xbetGroups = matching;
       return el;
     },
 
     findOddsButton: (section, betData, leg) => {
-      const group = section._arb1xbetGroup;
-      if (!group) return null;
-      console.log(`[ARB-1xbet] findOddsButton: type=${betData.market.type} sel=${leg.selection} line=${leg.line}`);
+      const groups = section._arb1xbetGroups || [];
+      if (!groups.length) return null;
+      console.log(`[ARB-1xbet] findOddsButton: type=${betData.market.type} sel=${leg.selection} line=${leg.line} groups=${JSON.stringify(groups.map(g=>g.name))}`);
 
-      const outcome = findOutcome(group, betData, leg);
+      let outcome = null;
+      for (const g of groups) { outcome = findOutcome(g, betData, leg); if (outcome) break; }
       if (!outcome) {
-        console.log('[ARB-1xbet] outcome not found in group:', group.name);
+        console.log('[ARB-1xbet] outcome not found in groups:', groups.map(g => g.name).join(','));
         return null;
       }
       console.log(`[ARB-1xbet] outcome found: id=${outcome.id} coef=${outcome.coef}`);

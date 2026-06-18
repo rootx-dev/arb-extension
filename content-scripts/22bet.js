@@ -34,6 +34,12 @@
 
   const GRP_ATTR = 'data-arb-22bet-groups';
   const BET_ATTR = 'data-arb-22bet-bet';
+  const PERIOD_ATTR = 'data-arb-22bet-periods';
+  const STAKE_TRIGGER = 'data-arb-22bet-stake';
+
+  // Period (half) markets are separate sub-games with their own constId URL
+  // (gameData.SubGames[].CI / .PN). Map our period enum → 22bet's PeriodName.
+  const PERIOD_PN = { '1st_half': '1st half', '2nd_half': '2nd half' };
 
   // ── Outcome lookup across all Events groups ────────────────────────────────
 
@@ -70,7 +76,11 @@
     }
 
     if (type === 'over_under') {
-      // Column 0 = Over, column 1 = Under (standard column ordering)
+      // Column 0 = Over, column 1 = Under (standard column ordering).
+      // Soccer halves are handled by navigating to the half's sub-game (see
+      // beforeFindMarket) — on that page Events already hold only the half's
+      // markets, so no period scoping is needed here. Tennis 1st-set still
+      // scopes by GS group.
       const colIdx = selection === 'Over' ? 0 : 1;
       const scopeToFirstSet = sport === 'tennis' && market.period === '1st_set';
       for (const group of events) {
@@ -203,6 +213,37 @@
 
     marketLabel: (market) => market.type,
 
+    // Period (half) markets live on a separate sub-game with its own constId URL.
+    // If the leg needs a half and we're not already on it, look up the sub-game's
+    // constId (bridge exposes SubGames period→CI in PERIOD_ATTR) and navigate —
+    // a full reload, after which doFill re-enters and the sub-game's Events hold
+    // only that half's markets.
+    beforeFindMarket: async (root, { sleep, waitFor, betData }) => {
+      const wantedPN = PERIOD_PN[betData.market.period];
+      if (!wantedPN) return; // full match — nothing to do
+      const currentCid = (location.pathname.split('/').pop().match(/^(\d+)-/) || [])[1];
+      let periods;
+      try {
+        const raw = await waitFor(() => document.documentElement.getAttribute(PERIOD_ATTR), { timeout: 8000 });
+        periods = JSON.parse(raw);
+      } catch (e) { console.log('[ARB-22bet] no period info (PERIOD_ATTR) — cannot switch period'); return; }
+      const wantedCid = periods.subgames && periods.subgames[wantedPN];
+      if (periods.active === wantedPN || (wantedCid && String(wantedCid) === currentCid)) {
+        console.log(`[ARB-22bet] already on "${wantedPN}" sub-game`);
+        return;
+      }
+      if (!wantedCid) {
+        console.log(`[ARB-22bet] no "${wantedPN}" sub-game for this match; available:`, JSON.stringify(periods.subgames));
+        return; // not offered → findOutcome will miss safely
+      }
+      const parts = location.pathname.split('/');
+      parts[parts.length - 1] = parts[parts.length - 1].replace(/^\d+-/, `${wantedCid}-`);
+      const url = location.origin + parts.join('/');
+      console.log(`[ARB-22bet] switching to "${wantedPN}" sub-game: ${url}`);
+      window.location.href = url;
+      await sleep(100000); // block; the reload restarts doFill on the sub-game page
+    },
+
     findMarketSection: (root, _label, market, betData) => {
       const raw = document.documentElement.getAttribute(GRP_ATTR);
       if (!raw) return null;
@@ -240,9 +281,21 @@
       return fakeBtn;
     },
 
-    // Stake input — selector needs in-session verification when logged in
+    // The real "STAKE (JPY)" field lives in the `.sum-st` container (verified
+    // live 2026-06-18). NOT `input.js_one_summa` — that's the separate ONE-CLICK
+    // quick-bet amount at the top of the slip (a wrong-field bug we already hit).
+    // The input itself only has the generic `keyboardInput` class, so scope by
+    // the `.sum-st` wrapper. Prefer the visible one.
     findStakeInput: (root) =>
-      root.querySelector('input.js_one_summa, input.coupon__input, input[class*="coupon-summa"]'),
+      [...root.querySelectorAll('.sum-st input')].find(i => i.offsetParent !== null)
+      || root.querySelector('.sum-st input'),
+
+    // The stake input is Vue 2 reactive — a native-setter write doesn't update
+    // the model, so route the fill through the MAIN-world bridge (like search).
+    fillStakeInput: async (input, value) => {
+      document.documentElement.setAttribute(STAKE_TRIGGER, String(value));
+      console.log('[ARB-22bet] stake fill via bridge:', value);
+    },
 
     searchSettleMs: 500,
     clearStakeFirst: true,

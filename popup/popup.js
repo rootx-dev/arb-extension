@@ -110,15 +110,24 @@ const BOOK_CAPABILITIES = {
     // tennis: match-winner "1X2" group; totals "Total" (full) / "Total 1" (1st-set,
     //   reversed "10.5 Over" name format). Verified 2026-06-16/17 (Rublev, Bergs).
     //   1st-set WINNER is absent on 1xbet (no standalone group) → not listed.
+    // soccer over_under '1st_half'/'2nd_half': each half is a separate sub-game
+    //   (own permanentId URL). The adapter (beforeFindMarket) navigates to it,
+    //   then matches the "Total" group requiring gameName==="1st half"/"2nd half".
+    //   Implemented 2026-06-17; pending live e2e confirmation. See 1xbet.js +
+    //   1xbet-dom-notes.md "1st-half / period markets".
     ice_hockey: { handicap_2way: ['ot_incl'], over_under: ['ot_incl'] },
-    soccer:     { '1x2': [null], over_under: [null], handicap_2way: [null] },
+    soccer:     { '1x2': [null], over_under: [null, '1st_half', '2nd_half'], handicap_2way: [null] },
     basketball: { handicap_2way: ['ot_incl'], over_under: ['ot_incl'] },
     tennis:     { handicap_2way: [null], over_under: [null, '1st_set'] },
   },
   '22bet': {
     // Same engine as 1xbet — needs e2e verification
+    // soccer over_under '1st_half'/'2nd_half': each half is a separate sub-game
+    //   (gameData.SubGames[].CI / .PN, confirmed 2026-06-18). beforeFindMarket
+    //   navigates to the sub-game's constId URL; on that page Events hold only
+    //   the half's markets. Implemented 2026-06-18; pending live e2e confirmation.
     ice_hockey: { handicap_2way: ['ot_incl'], over_under: ['ot_incl'] },
-    soccer:     { '1x2': [null], over_under: [null], handicap_2way: [null] },
+    soccer:     { '1x2': [null], over_under: [null, '1st_half', '2nd_half'], handicap_2way: [null] },
     basketball: { handicap_2way: ['ot_incl'], over_under: ['ot_incl'] },
     // tennis (same engine as 1xbet): match-winner via T=1/T=3 scan (22bet.js),
     // 1st-set totals via GS-scoped group scan. Enabled 2026-06-17 for live

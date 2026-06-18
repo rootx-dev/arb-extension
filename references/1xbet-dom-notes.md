@@ -98,6 +98,57 @@ All markets have `gamePeriodId: 0` in the default "All markets / Regular time" v
 | `handicap_2way`      | `1st_set`  | tennis     | **NOT PRESENT**                           | No standalone 1st-set winner group in 1xbet Pinia marketGroups. `groupName()` returns `null`; the runner logs available groups and reports unsupported market. Verified 2026-06-17 (Bergs vs Fritz, ATP Halle). |
 | `over_under`         | `null`     | tennis     | `Total`                                   | Full-match total games. Lines ~21–27. Outcome names: `"Over 21.5"` / `"Under 21"` (prefix format). Existing `startsWith` logic works. Verified 2026-06-17. |
 | `over_under`         | `1st_set`  | tennis     | `Total 1`                                 | 1st-set total games. Lines ~10.5–12. Outcome names: `"10.5 Over"` / `"11 Under"` (**reversed** format — `param` comes first). Must match with `endsWith('Over'/'Under') && param===line`, NOT `startsWith`. Verified 2026-06-17. |
+| `over_under`         | `1st_half` / `2nd_half` | soccer | `Total` **and** `Asian Total`, on the half's sub-game (`gameName` = `"1st half"`/`"2nd half"`) | The half is a separate sub-game page; `beforeFindMarket` navigates there (see "1st-half / period markets" below). `findMarketSection` requires the group's `gameName` to equal the period. Implemented 2026-06-17. |
+| `over_under` (Asian lines) | any | soccer | **`Asian Total`** (typeId **3827**=Over / **3828**=Under) | Quarter lines only (`0.75, 1.25, 1.75, 2.25…`) — never `.0`/`.5`. The plain `Total` group (typeId 9/10) carries half-point AND integer lines (`0.5, 1, 1.5, 2…`); a line lives in exactly ONE group. So `groupName` returns BOTH `['Total','Asian Total']` for soccer over_under and `findOddsButton` searches across them by `param`. Outcome names are prefix format (`"Over 1.25"`), so existing `findOutcome` works unchanged. Verified 2026-06-17 (Balcatta-Perth). |
+
+### 1st-half / period markets (investigated 2026-06-17, NOT yet implemented)
+
+Half/period totals are real on 1xbet but the simple "group name per (sport,
+type, period)" map does NOT reach them. The period markets are **separate
+sub-games**, not extra groups on the main event. Live findings (NPL-WA Balcatta
+line match; World Cup England–Croatia; a live Russian student-league match):
+
+1. **Halves are sub-games in `gameStore.$state.gamesById`.** The main event
+   (Balcatta: `gameId 729771021`, `permanentId 343010444`) has
+   `subGamesCount: 2`, `periodName: "Half"`, and `gamesById` holds three games:
+   - `729771021` — main, `gamePeriodId: 0`, `gamePeriodName: ""`
+   - `729771022` — **1st half**, `gamePeriodId: 1`, `gamePeriodName: "1st half"`, `name: "1st half"`
+   - `729771023` — 2nd half, `gamePeriodId: 2`, `gamePeriodName: "2nd half"`
+2. **`marketGroups` only holds the CURRENTLY-SELECTED game's groups.** On load it
+   shows the main game (all groups have `gameId === 729771021`, `gameName: ""`).
+   The half sub-games' markets are NOT in `marketGroups` until the period filter
+   is switched.
+3. **The period filter is a `vue-multiselect` reading "Regular time"** — element
+   `.multiselect.ui-multi-select` (sits to the left of / above the market grid).
+   Its options are Regular time / 1st half / 2nd half. Selecting "1st half"
+   loads sub-game `729771022`'s markets into `marketGroups`. (Confirmed by the
+   user. The option text is "1st half".) Backing store action is likely
+   `gameRequestMarketsByMarketType` + `marketType` state (=1 for regular). Options
+   render in a teleport, so a naive synthetic click on `.multiselect` does not
+   open it — drive it with a real pointer sequence or the component instance.
+4. **When a sub-game's markets ARE loaded, the group carries the period.** Seen
+   live: a 2nd-half Total group = `{name:"Total", gameName:"2nd half",
+   gameId:<subGameId>}`. So the 1st-half total will be `{name:"Total",
+   gameName:"1st half", gameId:729771022}`, outcomes `"Over 1.5"`/`"Under 1.5"`
+   param=1.5 (prefix format, like full-match Total). Full-match Total is
+   `gameName:""` — matching must require that, or it could grab a half group.
+   (`Total 1`/`Total 2` in soccer are **team** totals, not halves — never use
+   them for periods.)
+5. **The bridge does not serialize `gameName`/`gameId`.** `1xbet-bridge.js`
+   `pollGroups()` serializes only `{name, marketColumns}` per group + `{id, name,
+   param, typeId, coef}` per outcome. A period implementation MUST add `gameName`
+   (and `gameId`) to the serialized group payload.
+6. **Low-tier matches still list the sub-games** (Balcatta has them in
+   `gamesById`), so 1st-half O/U should be reachable once the filter is switched.
+
+Implementation plan (NOT yet built; needs a live test to confirm the trigger):
+(a) bridge serializes `gameName` + `gameId` per group; (b) adapter
+`beforeFindMarket` (1xbet, soccer 1st_half) switches the period multiselect to
+"1st half" and waits for `marketGroups` to repopulate with the sub-game;
+(c) `groupName`/`findMarketSection` match `name==='Total' && gameName==='1st
+half'`, and full-match Total requires `gameName===''`; (d) `findOutcome` is
+unchanged (Over/Under by param). Browser verification of the multiselect trigger
+was blocked mid-session by the browser-tool 5-hour usage limit.
 
 ### Outcome matching
 
